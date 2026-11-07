@@ -528,7 +528,7 @@
 <div id="kartuWA"></div>
 <div id="printArea"></div>
 <script>
-const APP_VERSION = "2026-11-07-report-v2.1";
+const APP_VERSION = "2026-11-07-report-v2.2";
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbys_3TssKzKvycmsQqI8MHg12aqUnFUpuTl8ZACXAyUrK5mnWNsaC1bmbMd1Tt8GhTl/exec";
 
 // =====================================================================
@@ -1580,7 +1580,7 @@ async function renderStok(){
   }
   renderTabelStok();
   $("stokNote").innerHTML = `Per ${tglPendek(PSD.tanggal)} ${PSD.tanggal.slice(0, 4)}. Stok Sistem = stok awal (opname terakhir) + pembelian − pemakaian (resep × penjualan) sejak opname terakhir. ` +
-    `Dikecualikan: ${PSD.kecuali.map(esc).join(", ") || "-"} (atur di Pengaturan: OPNAME_KECUALI). Klik nama bahan untuk riwayat opname.` +
+    `Dikecualikan: ${PSD.kecuali.map(esc).join(", ") || "-"} (atur di Pengaturan: OPNAME_KECUALI). Klik nama bahan untuk riwayat pembelian & opname.` +
     (PSD.satuanTakCocok.length ? ` Satuan pembelian yang tidak bisa dijumlah (diabaikan): ${PSD.satuanTakCocok.map(esc).join(", ")}.` : "");
 }
 function totalFisik(bahan){
@@ -1720,15 +1720,34 @@ $("opCetak").addEventListener("click", () => {
   setTimeout(() => document.body.classList.remove("cetak-opname"), 500);
 });
 window.addEventListener("afterprint", () => document.body.classList.remove("cetak-opname"));
-function bukaRiwayat(bahan){
+function bukaRiwayat(bahan, mode){
   const x = PSD.rows.find(r => r.bahan === bahan); if(!x) return;
-  const rows = (x.riwayat || []).map(h => ({ tanggal: h.tanggal, sistem: h.sistem, fisik: h.fisik, selisih: h.selisih, selisihPersen: h.selisihPersen, total: h.selisihRp, lokasi: (h.lokasi || []).map(l => l.lokasi + ": " + l.fisik).join(", ") }));
-  const ulang = rows.filter(r => Math.abs(r.selisihPersen || 0) * 100 > PSD.ambang.persen).length;
-  bukaDrawerData("Riwayat opname · " + bahan, `${rows.length} kali opname${ulang > 1 ? ` · ⚠ selisih besar berulang ${ulang}×` : ""}. Satuan ${x.satuan}. Harga rata-rata bulan ini ${rp(x.harga)}/${x.satuan}.`, rows,
-    `<div class="kv"><span>Stok sistem sekarang</span><b>${angka(x.sistem, 1)} ${esc(x.satuan)}</b></div><div class="kv"><span>Pemakaian rata-rata/hari (4 minggu)</span><b>${angka(x.rataHarian, 1)}</b></div><div class="kv"><span>Nilai stok</span><b>${rp(x.nilai)}</b></div>`,
-    [{ k: "tanggal", label: "Tanggal", tipe: "date" }, { k: "sistem", label: "Sistem", tipe: "num", fmt: v => angka(v, 1) }, { k: "fisik", label: "Fisik", tipe: "num", fmt: v => angka(v, 1) },
-     { k: "selisih", label: "Selisih", tipe: "num", fmt: v => (v > 0 ? "+" : "") + angka(v, 1) }, { k: "selisihPersen", label: "%", tipe: "num", fmt: v => pct(v, 0), kelas: v => Math.abs(v || 0) * 100 > PSD.ambang.persen ? "merah" : "" },
-     { k: "total", label: "Selisih Rp", tipe: "num", fmt: v => rp(v) }, { k: "lokasi", label: "Lokasi" }]);
+  const beli = x.pembelianList || [];
+  mode = mode || (beli.length || !(x.riwayat || []).length ? "beli" : "opname");
+  const opname = (x.riwayat || []).map(h => ({ tanggal: h.tanggal, sistem: h.sistem, fisik: h.fisik, selisih: h.selisih, selisihPersen: h.selisihPersen, total: h.selisihRp, lokasi: (h.lokasi || []).map(l => l.lokasi + ": " + l.fisik).join(", ") }));
+  const ulang = opname.filter(r => Math.abs(r.selisihPersen || 0) * 100 > PSD.ambang.persen).length;
+  const tombol = (v, t) => `<button data-rw="${v}" class="${mode === v ? "on" : ""}" style="color:var(--hijau-tua)">${t}</button>`;
+  const seg = `<div class="seg" style="background:var(--hijau3); width:max-content; margin-bottom:0.5rem">${tombol("beli", "Pembelian (" + beli.length + ")")}${tombol("opname", "Opname (" + opname.length + ")")}</div>`;
+  const ringkas = `<div class="kv"><span>Stok sistem sekarang</span><b>${angka(x.sistem, 1)} ${esc(x.satuan)}</b></div><div class="kv"><span>Pemakaian rata-rata/hari (4 minggu)</span><b>${angka(x.rataHarian, 1)}</b></div><div class="kv"><span>Nilai stok</span><b>${rp(x.nilai)}</b></div>`;
+  if(mode === "beli"){
+    const totQty = beli.reduce((s, r) => s + (Number(r.qtyStok) || 0), 0), totRp = beli.reduce((s, r) => s + (Number(r.total) || 0), 0);
+    const terakhir = beli[0];
+    const extra = seg + ringkas +
+      `<div class="kv"><span>Pembelian terakhir</span><b>${terakhir ? tglPendek(terakhir.tanggal) + " · " + rp(terakhir.hargaSatuan) + "/" + esc(terakhir.satuan || x.satuan) : "-"}</b></div>` +
+      `<div class="kv"><span>Rata-rata harga (semua pembelian)</span><b>${totQty > 0 ? rp(totRp / totQty) + "/" + esc(x.satuan) : "-"}</b></div>`;
+    const rows = beli.map(r => ({ tanggal: r.tanggal, item: r.item, beli: angka(r.qty, 2) + " " + (r.satuanBeli || ""), qtyStok: r.qtyStok, satuan: r.satuan, hargaSatuan: r.hargaSatuan, total: r.total }));
+    bukaDrawerData("Riwayat pembelian · " + bahan, beli.length ? `${beli.length} kali beli (dari Procurement), terbaru di atas.` : "Belum ada pembelian tercatat di Procurement untuk bahan ini (cek Jenis Product di Procurement sama persis dengan nama bahan).", rows, extra,
+      [{ k: "tanggal", label: "Tanggal", tipe: "date", fmt: v => tglPendek(v) + " " + v.slice(2, 4) }, { k: "item", label: "Nama / Merk", fmt: (v, r) => `<span style="white-space:normal; display:inline-block; min-width:8rem">${esc(v)}<br><span style="font-size:0.72rem; color:var(--abu)">beli ${esc(r.beli)}</span></span>` },
+       { k: "qtyStok", label: "Qty stok", tipe: "num", fmt: (v, r) => angka(v, 1) + " " + esc(r.satuan || "") },
+       { k: "hargaSatuan", label: "Harga/satuan", tipe: "num", fmt: v => rp(v) }, { k: "total", label: "Total", tipe: "num", fmt: v => rp(v) }]);
+  } else {
+    bukaDrawerData("Riwayat opname · " + bahan, `${opname.length} kali opname${ulang > 1 ? ` · ⚠ selisih besar berulang ${ulang}×` : ""}. Satuan ${x.satuan}. Harga rata-rata bulan ini ${rp(x.harga)}/${x.satuan}.`, opname,
+      seg + ringkas,
+      [{ k: "tanggal", label: "Tanggal", tipe: "date" }, { k: "sistem", label: "Sistem", tipe: "num", fmt: v => angka(v, 1) }, { k: "fisik", label: "Fisik", tipe: "num", fmt: v => angka(v, 1) },
+       { k: "selisih", label: "Selisih", tipe: "num", fmt: v => (v > 0 ? "+" : "") + angka(v, 1) }, { k: "selisihPersen", label: "%", tipe: "num", fmt: v => pct(v, 0), kelas: v => Math.abs(v || 0) * 100 > PSD.ambang.persen ? "merah" : "" },
+       { k: "total", label: "Selisih Rp", tipe: "num", fmt: v => rp(v) }, { k: "lokasi", label: "Lokasi" }]);
+  }
+  $("drExtra").querySelectorAll("[data-rw]").forEach(b => b.addEventListener("click", () => bukaRiwayat(bahan, b.dataset.rw)));
 }
 
 // ---------- Aset tetap & nilai buku ----------
