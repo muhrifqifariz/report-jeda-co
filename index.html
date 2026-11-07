@@ -528,7 +528,7 @@
 <div id="kartuWA"></div>
 <div id="printArea"></div>
 <script>
-const APP_VERSION = "2026-11-07-report-v2";
+const APP_VERSION = "2026-11-07-report-v2.1";
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbys_3TssKzKvycmsQqI8MHg12aqUnFUpuTl8ZACXAyUrK5mnWNsaC1bmbMd1Tt8GhTl/exec";
 
 // =====================================================================
@@ -2031,6 +2031,7 @@ function hitungTargetRider(x, k, T1, T2, mode){
   const akumSebelum = offset + cupAntara(x, x.start, tambahHari(m.s, -1));
   const tAkumSebelum = idx > 0 ? w[idx - 1].tAkum * target1 : 0;
   const targetMinggu = Math.max(0, Math.round(m.tAkum * target1 - akumSebelum));
+  const targetMinggu2 = Math.max(0, Math.round(m.tAkum * target2 - akumSebelum));
   const cupMinggu = ref ? cupAntara(x, m.s, ref) : 0;
   const akum = akumSebelum + cupMinggu;
   const jalan = ref ? hariKerjaAntara(x, m.s, ref) : 0;
@@ -2047,9 +2048,22 @@ function hitungTargetRider(x, k, T1, T2, mode){
   const kebutuhan = sisaHari ? Math.max(0, target1 - akum) / sisaHari : null;
   const kebutuhan2 = sisaHari ? Math.max(0, target2 - akum) / sisaHari : null;
   const status = akum >= tAkumKini - 0.5 ? "Aman" : ((tAkumKini - akum) / Math.max(1, tAkumKini) <= 0.10 ? "Kejar" : "Tertinggal");
+  // Tier 2 (2.000 cup): target minggu depan, kebutuhan per hari & estimasi tanggal tercapai
+  const targetNext2 = nx ? Math.max(0, Math.round(nx.tAkum * target2 - akum)) : null;
+  const perHariNext2 = nx && nx.hariKerja ? Math.ceil(targetNext2 / nx.hariKerja) : null;
+  const tglCapai = target => {
+    if(akum >= target) return "sudah";
+    if(!(rataHarian > 0)) return null;
+    let sisa = target - akum, d = acuan;
+    while(d < x.end){ d = tambahHari(d, 1); if(x.libur[d]) continue; sisa -= rataHarian; if(sisa <= 0) return d; }
+    return null;
+  };
+  const capai1 = tglCapai(target1), capai2 = tglCapai(target2);
+  const kurang2 = Math.max(0, target2 - proyeksi);
   const gerobak = (x.gerobak || []).filter(g => (!g.mulai || g.mulai <= m.e) && (!g.selesai || g.selesai >= m.s)).map(g => g.nama).join(", ");
   return { rider: x.rider, x, w, m, ke: m.ke, sisa: m.sisa, ref, cupMinggu, targetMinggu, selisih: cupMinggu - targetMinggu, akum, tAkum: Math.round(tAkumKini), kurang,
-    targetNext, perHariNext, nx, proyeksi, kebutuhan, kebutuhan2, status, menuju2000: proyeksi >= target2, gerobak, rataHarian, sisaHari, target1, target2, belumMulai: !ref };
+    targetNext, perHariNext, nx, proyeksi, kebutuhan, kebutuhan2, status, menuju2000: proyeksi >= target2,
+    targetNext2, perHariNext2, capai1, capai2, kurang2, targetMinggu2, akumSebelum, peluang2: akum >= target1 || proyeksi >= target2 * 0.8, gerobak, rataHarian, sisaHari, target1, target2, belumMulai: !ref };
 }
 let TM_DATA = null;
 async function renderTarget(){
@@ -2090,10 +2104,12 @@ async function renderTarget(){
   const lalu = k > 1 ? riders.map(x => hitungTargetRider(x, k - 1, D.target1, D.target2, mode)) : [];
   const n = s => hasil.filter(h => h.status === s && !h.belumMulai).length;
   const totK = hasil.reduce((s, h) => s + h.cupMinggu, 0), totL = lalu.reduce((s, h) => s + h.cupMinggu, 0);
+  $("kpiTarget").className = "kpis k5";
   $("kpiTarget").innerHTML = [
     kpiCard({ label: "Aman", nilai: angka(n("Aman")), sub: "akumulasi ≥ target" }),
     kpiCard({ label: "Kejar", nilai: angka(n("Kejar")), sub: "kurang ≤ 10%" }),
     kpiCard({ label: "Tertinggal", nilai: angka(n("Tertinggal")), sub: "kurang > 10%" }),
+    kpiCard({ label: "Proyeksi ≥ 2.000", nilai: angka(hasil.filter(h => h.menuju2000).length), sub: hasil.filter(h => h.akum >= 2000).length + " rider sudah tembus 2.000" }),
     kpiCard({ label: "Cup tim minggu ini", nilai: angka(totK), delta: k > 1 ? deltaHtml({ delta: totK - totL, deltaPct: totL ? (totK - totL) / totL : null }, false, true) : "", sub: k > 1 ? "minggu lalu " + angka(totL) : "minggu pertama periode" })
   ].join("");
   $("kpiTarget").querySelectorAll(".kpi").forEach(c => c.style.cursor = "default");
@@ -2110,7 +2126,12 @@ async function renderTarget(){
     { k: "targetNext", label: "Target minggu depan", tipe: "num", fmt: v => v === null ? "–" : angka(v) },
     { k: "perHariNext", label: "Target/hari minggu depan", tipe: "num", fmt: v => v === null ? "–" : angka(v) },
     { k: "kebutuhan", label: "Butuh/hari s/d akhir", tipe: "num", sek: true, fmt: v => v === null ? "–" : angka(Math.ceil(v)), tip: "(1.000 − cup periode ini) ÷ sisa hari kerja periode" },
-    { k: "proyeksi", label: "Proyeksi akhir periode", tipe: "num", fmt: v => angka(v) },
+    { k: "proyeksi", label: "Proyeksi akhir periode", tipe: "num", fmt: v => angka(v), kelas: v => v >= 2000 ? "naik" : (v < 1000 ? "merah" : "") },
+    { k: "capai1", label: "Tembus 1.000", tipe: "date", sek: true, fmt: v => v === "sudah" ? '<span class="badge ok">sudah</span>' : (v ? "±" + tglPendek(v) : '<span class="merah">tidak terkejar</span>'), tip: "Perkiraan tanggal tembus 1.000 cup dgn rata-rata harian sekarang" },
+    { k: "capai2", label: "Tembus 2.000", tipe: "date", fmt: v => v === "sudah" ? '<span class="badge ok">sudah</span>' : (v ? "±" + tglPendek(v) : "–"), tip: "Perkiraan tanggal tembus 2.000 cup dgn rata-rata harian sekarang" },
+    { k: "kebutuhan2", label: "Butuh/hari ke 2.000", tipe: "num", fmt: v => v === null ? "–" : angka(Math.ceil(v)), tip: "(2.000 − cup periode ini) ÷ sisa hari kerja periode" },
+    { k: "targetMinggu2", label: "Target mgg ini (2.000)", tipe: "num", sek: true, fmt: v => angka(v) },
+    { k: "targetNext2", label: "Target mgg depan (2.000)", tipe: "num", sek: true, fmt: v => v === null ? "–" : angka(v) },
     { k: "status", label: "Status", fmt: (v, h) => h.belumMulai ? '<span class="badge abu">belum mulai</span>' : `<span class="badge ${v === "Aman" ? "ok" : v === "Kejar" ? "warn" : "bad"}">${v}</span>${h.menuju2000 ? ' <span class="badge ok">Menuju 2.000</span>' : ""}` }
   ], kosong: "Tidak ada rider aktif di periode ini",
   setelah: el => el.querySelectorAll("[data-tm]").forEach(a => a.addEventListener("click", () => { tmPilih = a.dataset.tm; renderGrafikTarget(hasil); })) });
@@ -2143,7 +2164,8 @@ function renderGrafikTarget(hasil){
     { label: "Target 1.000", data: target, borderColor: WARNA.abu, borderDash: [6, 5], pointRadius: 0, borderWidth: 1.5 },
     { label: "Proyeksi", data: iRef >= 0 ? proy : [], borderColor: WARNA.hijau, borderDash: [3, 4], pointRadius: 0, borderWidth: 1.5 }
   ];
-  if(h.proyeksi >= 1500 || h.akum >= 1000) ds.push({ label: "2.000", data: hari.map(() => h.target2), borderColor: WARNA.hijau2, borderWidth: 1, pointRadius: 0 });
+  const target2Garis = hari.map(d => { const m = w.find(z => z.s <= d && z.e >= d); const prev = w[m.ke - 2]; const t0 = prev ? prev.tAkum : 0; const i = selisihHari(m.s, d) + 1; return Math.round((t0 + (m.tAkum - t0) * i / m.hari) * h.target2); });
+  ds.push({ label: "Target 2.000", data: target2Garis, borderColor: WARNA.hijau2, borderDash: [2, 3], borderWidth: 1.5, pointRadius: 0 });
   buatChart("chTmBurn", { type: "line", data: { labels: hari.map(d => Number(d.slice(8))), datasets: ds },
     options: { maintainAspectRatio: false, plugins: { legend: { position: "bottom" }, tooltip: { callbacks: { title: c => tglPendek(hari[c[0].dataIndex]), label: c => c.dataset.label + ": " + angka(c.parsed.y) } } }, scales: { y: { grid: { color: "#EEF0EA" }, beginAtZero: true }, x: { grid: { display: false } } } } });
   $("tmWaSub").textContent = x.rider + " · Minggu " + h.ke;
@@ -2155,7 +2177,9 @@ function teksWA(h){
   const L = [`Halo ${sapaan(h.rider)}, rekap Minggu ke-${h.ke}${h.sisa ? " (sisa)" : ""} (${rentang}):`];
   if(h.belumMulai) return L.concat([`Minggu ini belum dimulai. Target minggu ini ${angka(h.targetMinggu)} cup. Semangat! 💪`]).join("\n");
   const berjalan = h.ref && h.ref < h.m.e;
-  L.push(`Terjual ${angka(h.cupMinggu)} cup${berjalan ? " (s/d " + tglPendek(h.ref) + ")" : ""}, target ${angka(h.targetMinggu)} → ${h.selisih >= 0 ? "lebih " + angka(h.selisih) + " cup 👍" : "kurang " + angka(-h.selisih) + " cup"}.`);
+  const tier2 = h.akumSebelum >= h.target1 || h.targetMinggu === 0;
+  const tgt = tier2 ? h.targetMinggu2 : h.targetMinggu, sel = h.cupMinggu - tgt;
+  L.push(`Terjual ${angka(h.cupMinggu)} cup${berjalan ? " (s/d " + tglPendek(h.ref) + ")" : ""}, target${tier2 ? " menuju 2.000" : ""} ${angka(tgt)} → ${sel >= 0 ? "lebih " + angka(sel) + " cup 👍" : "kurang " + angka(-sel) + " cup"}.`);
   L.push(`Total periode ini ${angka(h.akum)} dari ${angka(h.target1)} cup.`);
   if(h.akum >= h.target1){
     L.push(`Mantap, bonus Rp300.000 sudah aman! 🎉`);
@@ -2164,6 +2188,7 @@ function teksWA(h){
     else L.push(`Sudah tembus 2.000 cup, bonus tambahan Rp200.000 juga aman. Luar biasa, terima kasih kerja kerasnya! 🙏`);
   } else if(h.targetNext !== null){
     L.push(`Supaya dapat bonus Rp300.000, minggu depan target ${angka(h.targetNext)} cup${h.perHariNext ? ", sekitar " + angka(h.perHariNext) + " cup per hari" : ""}. ${h.status === "Aman" ? "Pertahankan! 👍" : "Semangat! 💪"}`);
+    if(h.peluang2) L.push(`Proyeksi akhir periode ${angka(h.proyeksi)} cup. Kalau bisa ${h.perHariNext2 ? angka(h.perHariNext2) + " cup per hari minggu depan" : angka(Math.ceil(h.kebutuhan2 || 0)) + " cup per hari"}, kamu bisa tembus 2.000 cup (total bonus Rp500.000)! 🚀`);
   } else {
     L.push(`Sisa ${angka(h.target1 - h.akum)} cup lagi untuk bonus Rp300.000${h.kebutuhan ? ", sekitar " + angka(Math.ceil(h.kebutuhan)) + " cup per hari sampai akhir periode" : ""}. Semangat! 💪`);
   }
@@ -2196,6 +2221,7 @@ $("tmKartu").addEventListener("click", async () => {
       <div style="display:flex; gap:14px">
         ${box("Minggu ini", angka(h.cupMinggu), "target " + angka(h.targetMinggu) + " cup")}
         ${box("Total periode", angka(h.akum), "dari " + angka(h.target1) + " cup")}
+        ${box("Proyeksi", angka(h.proyeksi), h.proyeksi >= h.target2 ? "tembus 2.000 🚀" : h.proyeksi >= h.target1 ? "tembus 1.000 · kurang " + angka(h.kurang2) + " ke 2.000" : "kurang " + angka(h.target1 - h.proyeksi) + " ke 1.000")}
         ${box(h.akum >= h.target1 ? "Menuju 2.000" : "Minggu depan", h.akum >= h.target1 ? angka(Math.max(0, h.target2 - h.akum)) : (h.targetNext === null ? angka(Math.max(0, h.target1 - h.akum)) : angka(h.targetNext)), h.akum >= h.target1 ? "cup lagi" : (h.perHariNext ? "± " + angka(h.perHariNext) + " cup/hari" : "cup lagi"))}
       </div>
       <div style="display:flex; gap:18px; margin-top:16px; align-items:center">
@@ -2205,7 +2231,7 @@ $("tmKartu").addEventListener("click", async () => {
     </div>`;
   const c = $("kartuBurn").getContext("2d"), W = 600, H = 190, pad = 24;
   const hari = []; for(let d = x.start; d <= x.end; d = tambahHari(d, 1)) hari.push(d);
-  const maxY = Math.max(h.target1, h.proyeksi, h.akum) * 1.08;
+  const maxY = Math.max(h.target2, h.proyeksi, h.akum) * 1.05;
   const X = i => pad + i * (W - 2 * pad) / Math.max(1, hari.length - 1), Y = v => H - pad - v * (H - 2 * pad) / maxY;
   c.fillStyle = "#fff"; c.fillRect(0, 0, W, H);
   c.strokeStyle = "#E5E7EB"; c.lineWidth = 1; c.beginPath(); c.moveTo(pad, H - pad); c.lineTo(W - pad, H - pad); c.stroke();
@@ -2215,7 +2241,8 @@ $("tmKartu").addEventListener("click", async () => {
   hari.forEach((d, i) => { if(d > ref) return; a += x.perHari[d] || 0; if(i === 0) c.moveTo(X(i), Y(a)); else c.lineTo(X(i), Y(a)); last = i; });
   c.stroke();
   if(last >= 0){ c.setLineDash([3, 4]); c.lineWidth = 2; c.beginPath(); c.moveTo(X(last), Y(a)); c.lineTo(X(hari.length - 1), Y(h.proyeksi)); c.stroke(); c.setLineDash([]); }
-  c.fillStyle = "#6B7280"; c.font = "12px Inter"; c.fillText("1.000", W - pad - 34, Y(h.target1) - 6);
+  c.setLineDash([2, 3]); c.strokeStyle = "#A9B97A"; c.lineWidth = 1.5; c.beginPath(); c.moveTo(X(0), Y(0)); c.lineTo(X(hari.length - 1), Y(h.target2)); c.stroke(); c.setLineDash([]);
+  c.fillStyle = "#6B7280"; c.font = "12px Inter"; c.fillText("1.000", W - pad - 34, Y(h.target1) - 6); c.fillText("2.000", W - pad - 34, Y(h.target2) - 6);
   try{
     const canvas = await html2canvas($("kartuWA"), { backgroundColor: "#ffffff", scale: 1, width: 1000, height: 560 });
     const link = document.createElement("a");
