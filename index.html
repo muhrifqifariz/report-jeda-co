@@ -342,9 +342,9 @@
     <div class="g">
       <div class="card x12 tblkartu" id="lrCard">
         <h3><span>Laba / Rugi <span class="sub" id="lrSub"></span></span>
-          <span class="tools"><button class="chip on" data-lrmode="rp">Rp</button><button class="chip" data-lrmode="pct">% Omzet</button><button class="btn kolombtn" data-kolom="lrCard">Kolom ▾</button><button class="btn" data-csv="tblLR">CSV</button></span></h3>
+          <span class="tools"><span id="opMetodeBox" style="display:none; align-items:center; gap:0.3rem"><span class="sub" title="Cara membebankan selisih stock opname ke Laba/Rugi">Opname:</span><button class="chip" data-opmetode="Bulan opname" title="Seluruh selisih masuk ke bulan tanggal opname">Bulan opname</button><button class="chip" data-opmetode="Dibagi rata" title="Selisih dibagi rata ke bulan-bulan sejak penjualan pertama (atau sejak opname sebelumnya) s/d bulan opname">Dibagi rata</button></span><button class="chip on" data-lrmode="rp">Rp</button><button class="chip" data-lrmode="pct">% Omzet</button><button class="btn kolombtn" data-kolom="lrCard">Kolom ▾</button><button class="btn" data-csv="tblLR">CSV</button></span></h3>
         <div class="tblwrap"><table class="t" id="tblLR"></table></div>
-        <p class="note">Klik angka bulan untuk melihat transaksi sumbernya. ▸ = buka rincian. Klik judul kolom untuk mengurutkan (▲ naik, ▼ turun, klik lagi = urutan awal). "Selisih Persediaan (Opname)" → buka tab Persediaan &amp; Aset.</p>
+        <p class="note">Klik angka bulan untuk melihat transaksi sumbernya. ▸ = buka rincian. Klik judul kolom untuk mengurutkan (▲ naik, ▼ turun, klik lagi = urutan awal). "Selisih Persediaan (Opname)" → buka tab Persediaan &amp; Aset. <span id="opMetodeNote"></span></p>
       </div>
       <div class="card x8 l7 m12 tblkartu" id="menuCard">
         <h3><span>Profitabilitas per Menu <span class="sub" id="menuSub"></span></span><span class="tools"><button class="chip on" data-menuper="bulan">Bulan Ini</button><button class="chip" data-menuper="ytd">YTD</button><button class="btn" data-csv="tblMenu">CSV</button></span></h3>
@@ -528,7 +528,7 @@
 <div id="kartuWA"></div>
 <div id="printArea"></div>
 <script>
-const APP_VERSION = "2026-11-07-report-v2.2";
+const APP_VERSION = "2026-11-08-report-v2.3";
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbys_3TssKzKvycmsQqI8MHg12aqUnFUpuTl8ZACXAyUrK5mnWNsaC1bmbMd1Tt8GhTl/exec";
 
 // =====================================================================
@@ -592,7 +592,7 @@ function mintaPin(alasan){
       <p class="note" id="pinMsg"></p></div>`, true);
     const coba = async () => {
       $("pinMsg").textContent = "Memeriksa...";
-      try{ await apiPost({ action: "verifyPin", pin: $("pinIn").value }); sesiSet("jr_pin", $("pinIn").value); tutupModal(); resolve($("pinIn").value); }
+      try{ await apiPost({ action: "verifyPin", pin: $("pinIn").value }); const v = $("pinIn").value; sesiSet("jr_pin", v); modalBatal = null; tutupModal(); resolve(v); }
       catch(e){ $("pinMsg").textContent = e.message; }
     };
     $("pinBtn").addEventListener("click", coba);
@@ -1356,6 +1356,14 @@ function renderLR(){
       { k: "d", label: "Δ vs " + (P ? blnLabel(P) : "–"), tipe: "num", sek: true, fmt: (d, x) => d === null ? "–" : (x.r.persen ? (d >= 0 ? "+" : "−") + angka(Math.abs(d) * 100, 1) + " poin" : (d >= 0 ? "+" : "−") + (x.r.qty ? angka(Math.abs(d)) : rpK(Math.abs(d)))),
         title: (d, x) => d !== null && x.vp ? (d >= 0 ? "+" : "−") + pct(Math.abs(d / x.vp), 1) : "" }
     ]);
+  // Metode selisih opname (tersimpan di Pengaturan: METODE_SELISIH_OPNAME)
+  const metodeOp = (R.pengaturan && R.pengaturan.metodeOpname) || "Bulan opname";
+  const adaOpname = isPerusahaan() && bulanList().some(b => Math.abs(agg(b).selisihOpname || 0) > 0.5) || metodeOp === "Dibagi rata";
+  $("opMetodeBox").style.display = adaOpname ? "inline-flex" : "none";
+  document.querySelectorAll("[data-opmetode]").forEach(c => c.classList.toggle("on", c.dataset.opmetode === metodeOp));
+  $("opMetodeNote").textContent = adaOpname ? (metodeOp === "Dibagi rata"
+    ? "Selisih opname saat ini DIBAGI RATA ke bulan-bulan sejak penjualan pertama (opname berikutnya: sejak bulan setelah opname sebelumnya); persediaan di neraca bulan-bulan itu ikut terkoreksi. Klik angkanya untuk rincian pembagian."
+    : "Selisih opname saat ini dibebankan ke BULAN TANGGAL OPNAME.") : "";
   tabel($("tblLR"), { id: "lr", rows, kolom: kol, ulang: renderLR,
     rowKelas: x => [x.r.b ? "b" : "", x.r.sub ? "sub" : "", x.r.grp ? "grp" : "", x.r.tot ? "tot" : ""].join(" "),
     setelah: el => {
@@ -2474,6 +2482,16 @@ isiFilter();
 terapkanModeJenis();
 gantiTab(state.tab);
 muatReport(false);
+document.querySelectorAll("[data-opmetode]").forEach(c => c.addEventListener("click", async () => {
+  const baru = c.dataset.opmetode, lama = (R && R.pengaturan && R.pengaturan.metodeOpname) || "Bulan opname";
+  if(baru === lama) return;
+  const pin = await mintaPin("Ubah cara pembebanan selisih stock opname (mengubah laba per bulan). Masukkan PIN owner.");
+  if(!pin) return;
+  try{
+    await apiPost({ action: "simpanBarisReport", pin, sheet: "Pengaturan Report", row: { ID: (R.pengaturan && R.pengaturan.metodeOpnameId) || "", Kunci: "METODE_SELISIH_OPNAME", Nilai: baru, "Berlaku Mulai": "", Catatan: "Bulan opname / Dibagi rata -- diatur dari Jeda Report" } });
+    await muatReport(true);
+  }catch(e){ alert("Gagal menyimpan: " + e.message); }
+}));
 </script>
 </body>
 </html>
