@@ -528,7 +528,7 @@
 <div id="kartuWA"></div>
 <div id="printArea"></div>
 <script>
-const APP_VERSION = "2026-11-08-report-v2.4";
+const APP_VERSION = "2026-11-09-report-v2.7";
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbys_3TssKzKvycmsQqI8MHg12aqUnFUpuTl8ZACXAyUrK5mnWNsaC1bmbMd1Tt8GhTl/exec";
 
 // =====================================================================
@@ -784,17 +784,17 @@ function scopeFakta(){
 }
 
 const OPEX_LINES = ["OPEX - Gaji Dasar", "OPEX - Insentif Harian", "OPEX - Bonus", "OPEX - Gaji Produksi",
-  "OPEX - Sewa Lapak", "OPEX - Pulsa/Internet", "OPEX - Listrik/Charging", "OPEX - Marketing/KOL",
+  "OPEX - Sewa Lapak", "OPEX - Pulsa/Internet", "OPEX - Listrik/Charging", "OPEX - Marketing/KOL", "OPEX - Promo Gratis (Loyalty)",
   "OPEX - Perawatan Gerobak", "OPEX - Biaya QRIS/Admin", "OPEX - Lain-lain", "Belum dipetakan"];
 const GAJI_LINES = ["OPEX - Gaji Dasar", "OPEX - Insentif Harian", "OPEX - Bonus", "OPEX - Gaji Produksi"];
 function agg(bulan, fs){
   const bs = Array.isArray(bulan) ? bulan : [bulan];
-  const a = { pk: 0, diskon: 0, komplimen: 0, hppIsi: 0, hppPack: 0, cup: 0, cookies: 0, penyusutan: 0, bagiHasil: 0,
+  const a = { pk: 0, diskon: 0, komplimen: 0, hppIsi: 0, hppPack: 0, hppPecah: 0, pecahQty: 0, pecahCup: 0, gratisQty: 0, gratisCup: 0, cup: 0, cookies: 0, penyusutan: 0, bagiHasil: 0,
     opex: {}, hariAktif: 0, hadir: 0, absen: 0, libur: 0, pendapatanLain: 0, nonOp: 0, selisihOpname: 0, penyKecuali: 0, hppKurang: 0 };
   OPEX_LINES.forEach(l => a.opex[l] = 0);
   (fs || scopeFakta()).forEach(f => {
     if(bs.indexOf(f.b) < 0) return;
-    a.pk += f.pk; a.diskon += f.diskon; a.komplimen += f.komplimen; a.hppIsi += f.hppIsi; a.hppPack += f.hppPack;
+    a.pk += f.pk; a.diskon += f.diskon; a.komplimen += f.komplimen; a.hppIsi += f.hppIsi; a.hppPack += f.hppPack; a.hppPecah += f.hppPecah || 0; a.pecahQty += f.pecahQty || 0; a.pecahCup += f.pecahCup || 0; a.gratisQty += f.gratisQty || 0; a.gratisCup += f.gratisCup || 0;
     a.cup += f.cup; a.cookies += f.cookies; a.penyusutan += f.penyusutan; a.bagiHasil += f.bagiHasil;
     a.hariAktif += f.hariAktif; a.hadir += f.hadir; a.absen += f.absen; a.libur += (f.libur || 0); a.hppKurang += f.hppKurang;
     Object.keys(f.opex).forEach(l => a.opex[l] = (a.opex[l] || 0) + f.opex[l]);
@@ -809,7 +809,7 @@ function agg(bulan, fs){
   }
   a.pb = a.pk - a.diskon - a.komplimen;
   a.penyPersediaan = -a.selisihOpname + a.penyKecuali; // + = menambah biaya
-  a.hpp = a.hppIsi + a.hppPack + a.penyPersediaan;
+  a.hpp = a.hppIsi + a.hppPack + a.hppPecah + a.penyPersediaan;
   a.lk = a.pb - a.hpp;
   a.gaji = GAJI_LINES.reduce((s, l) => s + (a.opex[l] || 0), 0);
   a.opexTotal = Object.values(a.opex).reduce((s, x) => s + x, 0);
@@ -1114,6 +1114,7 @@ function struktur(a){
   let bahan = a.hppIsi;
   if(a.penyPersediaan > 0) hppAnak.push({ nama: "Selisih Persediaan", v: a.penyPersediaan, baris: "Selisih Persediaan (Opname)" });
   else bahan += a.penyPersediaan;
+  if(a.hppPecah > 0) hppAnak.push({ nama: "Pecah/Rusak", v: a.hppPecah, baris: "HPP Pecah/Rusak" });
   hppAnak.unshift({ nama: "Bahan", v: bahan, baris: "HPP Bahan" }, { nama: "Packaging", v: a.hppPack, baris: "HPP Packaging" });
   kel.push({ nama: "HPP", v: a.hpp, baris: "HPP", anak: hppAnak });
   kel.push({ nama: "Gaji", v: a.gaji, baris: "OPEX - Gaji Dasar", anak: GAJI_LINES.filter(l => a.opex[l]).map(l => ({ nama: l.replace("OPEX - ", ""), v: a.opex[l], baris: l })) });
@@ -1293,6 +1294,7 @@ const LR_BARIS = [
   { id: "hpp", label: "HPP", v: a => -a.hpp, grp: "hpp", tip: "Σ qty × HPP per unit menu + penyesuaian persediaan" },
   { id: "hppIsi", label: "HPP Bahan", baris: "HPP Bahan", v: a => -a.hppIsi, sub: 1, in: "hpp" },
   { id: "hppPack", label: "HPP Packaging", baris: "HPP Packaging", v: a => -a.hppPack, sub: 1, in: "hpp" },
+  { id: "hppPecah", label: "Pecah/Rusak", baris: "HPP Pecah/Rusak", v: a => -a.hppPecah, sub: 1, in: "hpp", tip: "HPP cup yang dicatat Pecah di Jeda Rider (cup pecah wajib dibawa pulang beserta isinya)" },
   { id: "opname", label: "Selisih Persediaan (Opname)", baris: "Selisih Persediaan (Opname)", v: a => a.selisihOpname, sub: 1, in: "hpp", hanyaTotal: 1, keTab: "persediaan" },
   { id: "kecuali", label: "Bahan Habis Pakai (dikecualikan opname)", baris: "Bahan Habis Pakai", v: a => -a.penyKecuali, sub: 1, in: "hpp", hanyaTotal: 1, tip: "Mis. Es Batu: sisa pembelian − pemakaian resep tiap bulan dibebankan langsung (bisa minus kalau resep memakai lebih banyak dari yang tercatat dibeli)" },
   { id: "lk", label: "Laba Kotor", v: a => a.lk, b: 1 },
@@ -1313,7 +1315,9 @@ const LR_BARIS = [
   { id: "hrg", label: "Harga rata-rata / cup", v: a => div(a.pb, a.unit), satuan: 1 },
   { id: "hppcup", label: "HPP / cup", v: a => div(a.hpp, a.unit), satuan: 1 },
   { id: "opcup", label: "OPEX / cup", v: a => div(a.opexTotal, a.unit), satuan: 1 },
-  { id: "lbcup", label: "Laba / cup", v: a => div(a.laba, a.unit), satuan: 1 }
+  { id: "lbcup", label: "Laba / cup", v: a => div(a.laba, a.unit), satuan: 1 },
+  { id: "gratisCup", label: "Gratis loyalty (cup/pcs)", v: a => a.gratisQty, qty: 1, tip: "Promo beli 7 gratis 1 (dicatat Gratis di Jeda Rider, wajib kartu loyalty). Tidak termasuk cup terjual/omzet, tapi IKUT dihitung komisi harian & target bonus bulanan 1.000/2.000 rider; HPP-nya di OPEX Promo Gratis (Loyalty)" },
+  { id: "pecahCup", label: "Pecah (cup/pcs)", v: a => a.pecahQty, qty: 1, tip: "Dicatat Pecah di Jeda Rider. Tidak termasuk cup terjual & komisi; HPP-nya di HPP Pecah/Rusak" }
 ]);
 let tabelRingkas = false;
 function fmtSel(r, v, pb){
@@ -1971,7 +1975,8 @@ function renderRider(){
     const hadir = a.hadir || a.hariAktif;
     const units = [...new Set(fs.filter(f => f.b === M && f.u).map(f => f.u))].map(namaUnit);
     return { k, nama: namaKaryawan(k), gerobak: units.join(", ") || "Belum ditugaskan", hadir, absen: a.absen, libur: a.libur, cup: a.unit, cupHari: hadir ? a.unit / hadir : null,
-      omzet: a.pb, kontribusi: a.pb - a.hpp - a.gaji, gaji: a.gaji, gajiCup: div(a.gaji, a.unit), gajiOmzet: div(a.gaji, a.pb), aktif: riderAktif(k) };
+      omzet: a.pb, kontribusi: a.pb - a.hpp - a.gaji - (a.opex["OPEX - Promo Gratis (Loyalty)"] || 0), gaji: a.gaji,
+      gratis: a.gratisQty, gratisRp: a.opex["OPEX - Promo Gratis (Loyalty)"] || 0, pecah: a.pecahQty, pecahRp: a.hppPecah, pecahPersen: div(a.pecahQty, a.pecahQty + a.unit), gajiCup: div(a.gaji, a.unit), gajiOmzet: div(a.gaji, a.pb), aktif: riderAktif(k) };
   }).filter(x => x.omzet || x.gaji);
   const rataTim = data.filter(x => x.cupHari).reduce((s, x) => s + x.cupHari, 0) / Math.max(1, data.filter(x => x.cupHari).length);
   data.forEach(x => x.vsTim = x.cupHari ? x.cupHari / rataTim - 1 : null);
@@ -1982,6 +1987,8 @@ function renderRider(){
     { k: "hadir", label: "Hadir", tipe: "num" }, { k: "absen", label: "Absen", tipe: "num", sek: true }, { k: "libur", label: "Libur", tipe: "num", sek: true },
     { k: "cup", label: "Cup", tipe: "num", fmt: v => angka(v) },
     { k: "cupHari", label: "Cup/hari hadir", tipe: "num", fmt: v => angka(v, 1) },
+    { k: "gratis", label: "Gratis (loyalty)", tipe: "num", fmt: (v, x) => v ? angka(v) + ` <span class="sub">${rpT(x.gratisRp)}</span>` : "–" },
+    { k: "pecah", label: "Pecah", tipe: "num", fmt: (v, x) => v ? angka(v) + ` <span class="sub">${rpT(x.pecahRp)}</span>` : "–", kelas: (v, x) => x.pecahPersen > 0.02 ? "merah" : "" },
     { k: "omzet", label: "Omzet", tipe: "num", fmt: v => rp(v) },
     { k: "kontribusi", label: "Laba kontribusi", tipe: "num", fmt: v => rp(v), kelas: v => v < 0 ? "merah" : "" },
     { k: "gaji", label: "Gaji total", tipe: "num", fmt: v => rp(v) },
