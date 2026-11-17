@@ -528,7 +528,7 @@
 <div id="kartuWA"></div>
 <div id="printArea"></div>
 <script>
-const APP_VERSION = "2026-11-09-report-v2.7";
+const APP_VERSION = "2026-11-17-report-v2.8";
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbys_3TssKzKvycmsQqI8MHg12aqUnFUpuTl8ZACXAyUrK5mnWNsaC1bmbMd1Tt8GhTl/exec";
 
 // =====================================================================
@@ -785,7 +785,21 @@ function scopeFakta(){
 
 const OPEX_LINES = ["OPEX - Gaji Dasar", "OPEX - Insentif Harian", "OPEX - Bonus", "OPEX - Gaji Produksi",
   "OPEX - Sewa Lapak", "OPEX - Pulsa/Internet", "OPEX - Listrik/Charging", "OPEX - Marketing/KOL", "OPEX - Promo Gratis (Loyalty)",
-  "OPEX - Perawatan Gerobak", "OPEX - Biaya QRIS/Admin", "OPEX - Lain-lain", "Belum dipetakan"];
+  "OPEX - Produk Dibuang", "OPEX - Perawatan Gerobak", "OPEX - Biaya QRIS/Admin",
+  "OPEX - Peralatan Kecil", "OPEX - Perlengkapan Habis Pakai", "OPEX - Transport/Ongkir", "OPEX - Langganan Software",
+  "OPEX - Lain-lain", "Belum dipetakan"];
+// Nama tampilan & penjelasan baris OPEX (kunci baris tetap sama dgn server)
+const OPEX_LABEL = { "OPEX - Marketing/KOL": "Marketing & Promosi", "OPEX - Produk Dibuang": "Produk Dibuang (kedaluwarsa dll.)",
+  "OPEX - Peralatan Kecil": "Peralatan Kecil (< Rp500rb)", "OPEX - Promo Gratis (Loyalty)": "Promo Gratis (Loyalty rider)" };
+const OPEX_TIP = {
+  "OPEX - Marketing/KOL": "Procurement kategori Marketing (bayar KOL, materi promosi, sewa booth event, cup tester) + HPP produk yang diberikan gratis lewat Jeda Owner",
+  "OPEX - Produk Dibuang": "HPP produk jadi yang dibuang (kedaluwarsa, rusak, gagal produksi) — dicatat di Jeda Admin tab Dibuang",
+  "OPEX - Peralatan Kecil": "Alat di bawah batas Aset/Capex (Procurement: Operating Expense / Tools) — langsung jadi biaya, tidak disusutkan",
+  "OPEX - Perlengkapan Habis Pakai": "Procurement: Operating Expense / Consumable (tisu, plastik sampah, pembersih, seragam, roll cup sealer, dll.)",
+  "OPEX - Transport/Ongkir": "Ongkos kirim & angkut (Procurement: Operating Expense / Transport/Ongkir)",
+  "OPEX - Langganan Software": "Langganan aplikasi/AI/cloud (Procurement: Operating Expense / Langganan Software)",
+  "OPEX - Lain-lain": "Operating Expense yang Jenis-nya belum punya baris sendiri" };
+const namaOpex = l => OPEX_LABEL[l] || l.replace("OPEX - ", "");
 const GAJI_LINES = ["OPEX - Gaji Dasar", "OPEX - Insentif Harian", "OPEX - Bonus", "OPEX - Gaji Produksi"];
 function agg(bulan, fs){
   const bs = Array.isArray(bulan) ? bulan : [bulan];
@@ -803,7 +817,7 @@ function agg(bulan, fs){
     bs.forEach(b => {
       const p = R.perusahaan[b]; if(!p) return;
       a.pendapatanLain += p.lr.pendapatanLain || 0; a.nonOp += p.lr.nonOp || 0;
-      a.selisihOpname += p.lr.selisihOpname || 0; a.penyKecuali += p.lr.penyKecuali || 0;
+      a.selisihOpname += p.lr.selisihOpname || 0; a.penyKecuali += p.lr.penyKecuali || 0; a.buangQty = (a.buangQty || 0) + (p.lr.buangQty || 0);
     });
     a.hariJualan = bs.reduce((s, b) => s + ((R.perusahaan[b] || {}).hariJualan || 0), 0);
   }
@@ -1035,7 +1049,7 @@ function renderRingkasan(){
   const kasLalu = bulanLalu(M) ? R.perusahaan[bulanLalu(M)].neraca.kas : null;
   const eKas = { delta: kasLalu === null ? null : kasNow - kasLalu, deltaPct: kasLalu ? (kasNow - kasLalu) / Math.abs(kasLalu) : null };
   $("kpis").innerHTML = [
-    kpiCard({ label: "Penjualan Bersih", tip: "Penjualan Kotor − Diskon − Komplimen/KOL", nilai: rp(ePB.kini), ringkas: rpK(ePB.kini), delta: deltaHtml(ePB), sub: `Kotor ${rpK(aM.pk)} · diskon ${rpK(aM.diskon + aM.komplimen)}`, seri: ePB.seri, rata: rpK(ePB.rata), ytd: rpK(ePB.ytd), goto: "lr" }),
+    kpiCard({ label: "Penjualan Bersih", tip: "Penjualan Kotor − Diskon − Produk Gratis", nilai: rp(ePB.kini), ringkas: rpK(ePB.kini), delta: deltaHtml(ePB), sub: `Kotor ${rpK(aM.pk)} · diskon ${rpK(aM.diskon + aM.komplimen)}`, seri: ePB.seri, rata: rpK(ePB.rata), ytd: rpK(ePB.ytd), goto: "lr" }),
     kpiCard({ label: "Laba Kotor", tip: "Penjualan Bersih − HPP. GPM = Laba Kotor ÷ Penjualan Bersih", nilai: rp(eLK.kini), ringkas: rpK(eLK.kini), delta: deltaHtml(eLK), sub: `GPM ${pct(div(aM.lk, aM.pb))} · YTD ${pct(div(aY.lk, aY.pb))}`, seri: eLK.seri, rata: rpK(eLK.rata), ytd: rpK(eLK.ytd), goto: "lr" }),
     kpiCard({ label: "OPEX", tip: "Biaya operasional termasuk gaji, insentif, bonus (bukan HPP & penyusutan)", nilai: rp(eOP.kini), ringkas: rpK(eOP.kini), delta: deltaHtml(eOP, true), sub: `Gaji ${rpK(aM.gaji)} · lain ${rpK(aM.opexLain)}`, seri: eOP.seri, rata: rpK(eOP.rata), ytd: rpK(eOP.ytd), goto: "lr" }),
     kpiCard({ label: "Laba Bersih", tip: "Laba Kotor − OPEX − Penyusutan ± Lain-lain − Bagi Hasil Investor", nilai: rp(eLB.kini), ringkas: rpK(eLB.kini), delta: deltaHtml(eLB), sub: `Net margin ${pct(div(aM.laba, aM.pb))}`, seri: eLB.seri, rata: rpK(eLB.rata), ytd: rpK(eLB.ytd), goto: "lr" }),
@@ -1117,8 +1131,8 @@ function struktur(a){
   if(a.hppPecah > 0) hppAnak.push({ nama: "Pecah/Rusak", v: a.hppPecah, baris: "HPP Pecah/Rusak" });
   hppAnak.unshift({ nama: "Bahan", v: bahan, baris: "HPP Bahan" }, { nama: "Packaging", v: a.hppPack, baris: "HPP Packaging" });
   kel.push({ nama: "HPP", v: a.hpp, baris: "HPP", anak: hppAnak });
-  kel.push({ nama: "Gaji", v: a.gaji, baris: "OPEX - Gaji Dasar", anak: GAJI_LINES.filter(l => a.opex[l]).map(l => ({ nama: l.replace("OPEX - ", ""), v: a.opex[l], baris: l })) });
-  const opexAnak = OPEX_LINES.filter(l => GAJI_LINES.indexOf(l) < 0 && a.opex[l]).map(l => ({ nama: l.replace("OPEX - ", ""), v: a.opex[l], baris: l }));
+  kel.push({ nama: "Gaji", v: a.gaji, baris: "OPEX - Gaji Dasar", anak: GAJI_LINES.filter(l => a.opex[l]).map(l => ({ nama: namaOpex(l), v: a.opex[l], baris: l })) });
+  const opexAnak = OPEX_LINES.filter(l => GAJI_LINES.indexOf(l) < 0 && a.opex[l]).map(l => ({ nama: namaOpex(l), v: a.opex[l], baris: l }));
   const nonOpNet = a.nonOp - a.pendapatanLain;
   if(Math.abs(nonOpNet) > 0.5) opexAnak.push({ nama: nonOpNet > 0 ? "Non-operasional" : "Pendapatan lain (−)", v: nonOpNet, baris: nonOpNet > 0 ? "Non-operasional" : "Pendapatan Lain" });
   kel.push({ nama: "OPEX Lain", v: a.opexLain + nonOpNet, baris: "OPEX - Lain-lain", anak: opexAnak });
@@ -1289,8 +1303,8 @@ function renderInsight(){
 const LR_BARIS = [
   { id: "pk", label: "Penjualan Kotor", baris: "Penjualan Kotor", v: a => a.pk },
   { id: "diskon", label: "Diskon & Promo", baris: "Diskon & Promo", v: a => -a.diskon, sub: 1 },
-  { id: "komp", label: "Komplimen/KOL", baris: "Komplimen/KOL", v: a => -a.komplimen, sub: 1 },
-  { id: "pb", label: "Penjualan Bersih", baris: "Penjualan Bersih", v: a => a.pb, b: 1, tip: "Penjualan Kotor − Diskon − Komplimen" },
+  { id: "komp", label: "Produk Gratis (nilai jual)", baris: "Komplimen/KOL", v: a => -a.komplimen, sub: 1, tip: "BUKAN biaya: harga jual produk yang diberikan gratis lewat Jeda Owner (status Gratis / diskon 100%). Hanya membatalkan Penjualan Kotor-nya. Biaya sebenarnya (HPP-nya) ada di OPEX Marketing & Promosi. Uang yang dibayar ke KOL juga di Marketing — tidak dihitung dua kali." },
+  { id: "pb", label: "Penjualan Bersih", baris: "Penjualan Bersih", v: a => a.pb, b: 1, tip: "Penjualan Kotor − Diskon − Produk Gratis" },
   { id: "hpp", label: "HPP", v: a => -a.hpp, grp: "hpp", tip: "Σ qty × HPP per unit menu + penyesuaian persediaan" },
   { id: "hppIsi", label: "HPP Bahan", baris: "HPP Bahan", v: a => -a.hppIsi, sub: 1, in: "hpp" },
   { id: "hppPack", label: "HPP Packaging", baris: "HPP Packaging", v: a => -a.hppPack, sub: 1, in: "hpp" },
@@ -1300,7 +1314,7 @@ const LR_BARIS = [
   { id: "lk", label: "Laba Kotor", v: a => a.lk, b: 1 },
   { id: "gpm", label: "GPM %", v: a => div(a.lk, a.pb), persen: 1, tip: "Laba Kotor ÷ Penjualan Bersih" },
   { id: "opex", label: "OPEX", v: a => -a.opexTotal, grp: "opex" }
-].concat(OPEX_LINES.map(l => ({ id: l, label: l.replace("OPEX - ", ""), baris: l, v: a => -(a.opex[l] || 0), sub: 1, in: "opex" })))
+].concat(OPEX_LINES.map(l => ({ id: l, label: namaOpex(l), baris: l, v: a => -(a.opex[l] || 0), sub: 1, in: "opex", tip: OPEX_TIP[l] })))
 .concat([
   { id: "ebitda", label: "EBITDA", v: a => a.ebitda, b: 1, tip: "Laba Kotor − OPEX" },
   { id: "dep", label: "Penyusutan", baris: "Penyusutan", v: a => -a.penyusutan },
@@ -1317,7 +1331,8 @@ const LR_BARIS = [
   { id: "opcup", label: "OPEX / cup", v: a => div(a.opexTotal, a.unit), satuan: 1 },
   { id: "lbcup", label: "Laba / cup", v: a => div(a.laba, a.unit), satuan: 1 },
   { id: "gratisCup", label: "Gratis loyalty (cup/pcs)", v: a => a.gratisQty, qty: 1, tip: "Promo beli 7 gratis 1 (dicatat Gratis di Jeda Rider, wajib kartu loyalty). Tidak termasuk cup terjual/omzet, tapi IKUT dihitung komisi harian & target bonus bulanan 1.000/2.000 rider; HPP-nya di OPEX Promo Gratis (Loyalty)" },
-  { id: "pecahCup", label: "Pecah (cup/pcs)", v: a => a.pecahQty, qty: 1, tip: "Dicatat Pecah di Jeda Rider. Tidak termasuk cup terjual & komisi; HPP-nya di HPP Pecah/Rusak" }
+  { id: "pecahCup", label: "Pecah (cup/pcs)", v: a => a.pecahQty, qty: 1, tip: "Dicatat Pecah di Jeda Rider. Tidak termasuk cup terjual & komisi; HPP-nya di HPP Pecah/Rusak" },
+  { id: "buangQty", label: "Produk dibuang (cup/pcs)", v: a => a.buangQty || 0, qty: 1, hanyaTotal: 1, tip: "Dicatat di Jeda Admin tab Dibuang (kedaluwarsa, rusak, gagal produksi). HPP-nya di OPEX Produk Dibuang" }
 ]);
 let tabelRingkas = false;
 function fmtSel(r, v, pb){
